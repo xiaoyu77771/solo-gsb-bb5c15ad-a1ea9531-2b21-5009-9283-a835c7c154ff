@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>直流网络校核器</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1>直流网络校核器</h1>
+      <p class="subtitle">改进节点分析（MNA）· 节点电压 / 支路电流 / 功率平衡校核</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ===================== 左侧：输入区 ===================== -->
+    <section class="panel panel-input">
+      <div class="toolbar">
+        <div class="btn-group">
+          <button class="btn" data-sample="1">载入示例①正常网络</button>
+          <button class="btn" data-sample="2">示例②浮置子网</button>
+          <button class="btn" data-sample="3">示例③电压源冲突</button>
+        </div>
+        <button class="btn btn-ghost" id="btn-clear">清空</button>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>接地节点</h2>
+        </div>
+        <select id="ground-select" class="input ground-select"></select>
+        <p class="hint">接地节点电位固定为 0&nbsp;V，是全网络的电压参考点。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>节点表</h2>
+          <div class="head-right">
+            <span class="count" id="node-count"></span>
+            <button class="btn btn-small" id="btn-add-node">＋ 添加节点</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="grid" id="node-table">
+            <thead><tr><th style="width:70px">编号</th><th>节点</th><th style="width:60px">操作</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>元件表</h2>
+          <div class="head-right">
+            <span class="count" id="element-count"></span>
+            <button class="btn btn-small" id="btn-add-element">＋ 添加元件</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="grid" id="element-table">
+            <thead>
+              <tr>
+                <th style="width:70px">编号</th>
+                <th style="width:88px">类型</th>
+                <th style="width:80px">起始端 p</th>
+                <th style="width:80px">终止端 n</th>
+                <th style="width:120px">参数值</th>
+                <th style="width:56px">操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="hint">
+          <b>R</b> 电阻（Ω）　<b>I</b> 电流源（A，正值电流由 p 流向 n）
+          <b>V</b> 电压源（V，p 为正极、n 为负极）；支路方向均取 p → n。
+        </p>
+      </div>
+
+      <button class="btn btn-primary btn-block" id="btn-solve">▶ 校核求解</button>
+    </section>
+
+    <!-- ===================== 右侧：结果区 ===================== -->
+    <section class="panel panel-result">
+      <div id="error-panel" class="error-panel hidden"></div>
+      <div id="warning-panel" class="warning-panel hidden"></div>
+
+      <div id="result-area" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>功率平衡校核</h2></div>
+          <div id="power-card" class="power-card"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>节点电压</h2>
+            <span class="legend"><i class="sw sw-ground"></i>接地　<i class="sw sw-neg"></i>负电位</span>
+          </div>
+          <div class="table-wrap">
+            <table class="grid result-grid" id="voltage-table">
+              <thead><tr><th>节点</th><th>电压 (V)</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>支路电流与功率</h2>
+            <span class="legend"><i class="sw sw-src"></i>电源支路　<i class="sw sw-neg"></i>实际方向 n→p</span>
+          </div>
+          <div class="table-wrap">
+            <table class="grid result-grid" id="branch-table">
+              <thead>
+                <tr>
+                  <th>编号</th><th>类型</th><th>支路</th><th>参数</th>
+                  <th>电流 (A)</th><th>实际方向</th><th>功率 (W)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="placeholder" class="placeholder">
+        <div class="placeholder-mark">⚡</div>
+        <p>录入网络后点击“校核求解”，或先载入一个示例。</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
