@@ -198,3 +198,60 @@ body {
 .placeholder-mark { font-size: 40px; margin-bottom: 8px; }
 
 .hidden { display: none; }
+
+/* ---------------- 单参数扫描 ---------------- */
+.sweep-form {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 9px 12px;
+}
+.sweep-field { display: flex; flex-direction: column; gap: 3px; }
+.sweep-field-wide { grid-column: 1 / -1; }
+.sweep-field span, .sweep-ctrl span { font-size: 12px; color: var(--ink-soft); }
+.input {
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  font: inherit;
+  background: #fff;
+}
+.input:focus { outline: none; border-color: var(--brand); }
+
+.sweep-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.sweep-ctrl { display: flex; flex-direction: column; gap: 3px; }
+.sweep-ctrl select { min-width: 180px; }
+.sw-ok { background: var(--ok); }
+.sw-err { background: var(--err); }
+
+.sweep-chart { width: 100%; height: auto; display: block; }
+.sweep-chart text { font-family: "SFMono-Regular", Consolas, "PingFang SC", sans-serif;
+  font-size: 11px; fill: var(--ink-soft); }
+.sweep-chart .axis { stroke: var(--ink-soft); stroke-width: 1; }
+.sweep-chart .gridline { stroke: var(--line); stroke-width: 1; }
+.sweep-chart .zero { stroke: #b8c2d0; stroke-width: 1.2; stroke-dasharray: 4 3; }
+.sweep-chart .curve { fill: none; stroke: var(--brand); stroke-width: 1.8; }
+.sweep-chart .pt-ok { fill: var(--brand); }
+.sweep-chart .pt-err { fill: var(--err); }
+.sweep-chart .title { font-size: 12px; font-weight: 600; fill: var(--ink); }
+.sweep-chart .pt-hit { fill: transparent; }
+.chart-empty {
+  padding: 46px 12px; text-align: center; color: var(--err);
+  border: 1px dashed #e3a1a5; border-radius: 8px; background: var(--err-bg);
+  font-weight: 600;
+}
+
+.row-fail td { background: var(--bad-row); }
+.status-tag {
+  display: inline-block; border-radius: 5px; padding: 1px 8px;
+  font-size: 12px; font-weight: 700;
+}
+.status-ok { background: var(--ok-bg); color: var(--ok); }
+.status-err { background: var(--err-bg); color: var(--err); }
+.point-errors { margin: 2px 0 0; padding-left: 18px; }
+.point-errors li { color: var(--err); font-size: 12px; }

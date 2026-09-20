@@ -79,6 +79,36 @@
         </p>
       </div>
 
+      <div class="card">
+        <div class="card-head">
+          <h2>单参数扫描</h2>
+        </div>
+        <div class="sweep-form">
+          <label class="sweep-field sweep-field-wide">
+            <span>扫描元件</span>
+            <select id="sweep-element" class="input"></select>
+          </label>
+          <label class="sweep-field">
+            <span>起值</span>
+            <input id="sweep-start" class="input" type="number" step="any" value="1" />
+          </label>
+          <label class="sweep-field">
+            <span>止值</span>
+            <input id="sweep-end" class="input" type="number" step="any" value="100" />
+          </label>
+          <label class="sweep-field">
+            <span>采样点数 (2～101)</span>
+            <input id="sweep-points" class="input" type="number" step="1" min="2" max="101" value="21" />
+          </label>
+        </div>
+        <p class="hint">
+          逐点等间距替换所选元件的参数并复用同一套求解 / 诊断；扫描在副本上进行，不会改写元件表。
+          电阻的起、止值都必须为正，单个采样点失败不会中断整次扫描。
+        </p>
+        <button class="btn btn-block" id="btn-sweep">📈 开始参数扫描</button>
+        <div id="sweep-feedback" class="error-panel hidden"></div>
+      </div>
+
       <button class="btn btn-primary btn-block" id="btn-solve">▶ 校核求解</button>
     </section>
 
@@ -86,6 +116,53 @@
     <section class="panel panel-result">
       <div id="error-panel" class="error-panel hidden"></div>
       <div id="warning-panel" class="warning-panel hidden"></div>
+
+      <div id="sweep-result" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>参数扫描曲线</h2>
+            <span class="count" id="sweep-meta"></span>
+          </div>
+          <div class="sweep-controls">
+            <label class="sweep-ctrl">
+              <span>观测量</span>
+              <select id="sweep-quantity">
+                <option value="voltage">节点电压 (V)</option>
+                <option value="current">支路电流 (A)</option>
+              </select>
+            </label>
+            <label class="sweep-ctrl">
+              <span id="sweep-target-label">节点</span>
+              <select id="sweep-target"></select>
+            </label>
+            <span class="legend">
+              <i class="sw sw-ok"></i>成功
+              <i class="sw sw-err"></i>失败点（不连线）
+            </span>
+          </div>
+          <div id="sweep-chart"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>采样点明细</h2>
+            <span class="legend"><i class="sw sw-err"></i>该点求解失败</span>
+          </div>
+          <div class="table-wrap">
+            <table class="grid result-grid" id="sweep-table">
+              <thead>
+                <tr>
+                  <th style="width:52px">#</th>
+                  <th id="sweep-param-head">参数值</th>
+                  <th id="sweep-value-head">观测值</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
       <div id="result-area" class="hidden">
         <div class="card">

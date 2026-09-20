@@ -3,11 +3,16 @@
 
 const MAX_NODES = 30;
 const MAX_ELEMENTS = 90;
+const SWEEP_MIN_POINTS = 2;
+const SWEEP_MAX_POINTS = 101;
 const TYPE_LABEL = { R: "电阻", I: "电流源", V: "电压源" };
 const TYPE_UNIT = { R: "Ω", I: "A", V: "V" };
 const POWER_OK_REL = 1e-6; // 相对误差阈值（百万分之一）
 
 let state = freshState();
+// 最近一次扫描的完整响应（含全部点的节点电压 / 支路电流），切换观测量只读取它
+let sweepResult = null;
+let sweepView = { quantity: "voltage", target: null };
 
 function freshState() {
   return {
@@ -185,7 +190,28 @@ function renderAll() {
   renderNodes();
   renderElements();
   renderGroundSelect();
+  renderSweepElements();
   clearFeedback();
+}
+
+/* ------------------------------ 单参数扫描 ------------------------------ */
+function renderSweepElements() {
+  const sel = $("#sweep-element");
+  const current = sel.value;
+  sel.innerHTML = "";
+  if (state.elements.length === 0) {
+    sel.appendChild(el("option", { value: "", text: "（元件表为空）" }));
+    sel.value = "";
+    return;
+  }
+  state.elements.forEach((e) => {
+    const label = `${e.id || "(未命名)"} · ${e.type} ${TYPE_LABEL[e.type] || ""}（${e.node_p}→${e.node_n}）`;
+    sel.appendChild(el("option", { value: e.id, text: label }));
+  });
+  // 保留当前已选元件；失效则回落到第一项
+  sel.value = current && state.elements.some((e) => e.id === current)
+    ? current
+    : state.elements[0].id;
 }
 
 /* ------------------------------ 新增行 ------------------------------ */
@@ -242,6 +268,7 @@ document.querySelectorAll("[data-sample]").forEach((btn) => {
       nodes: s.nodes.map((n) => ({ id: n.id })),
       elements: s.elements.map((e) => ({ ...e, value: String(e.value) })),
     };
+    resetSweep();
     renderAll();
     $("#placeholder").classList.add("hidden");
   });
@@ -249,10 +276,20 @@ document.querySelectorAll("[data-sample]").forEach((btn) => {
 
 $("#btn-clear").addEventListener("click", () => {
   state = { ground: "", nodes: [], elements: [] };
+  resetSweep();
   renderAll();
   $("#result-area").classList.add("hidden");
   $("#placeholder").classList.remove("hidden");
 });
+
+function resetSweep() {
+  sweepResult = null;
+  sweepView = { quantity: "voltage", target: null };
+  $("#sweep-result").classList.add("hidden");
+  const fb = $("#sweep-feedback");
+  fb.classList.add("hidden");
+  fb.innerHTML = "";
+}
 
 /* ------------------------------ 反馈区 ------------------------------ */
 function clearFeedback() {
@@ -503,5 +540,404 @@ $("#btn-solve").addEventListener("click", async () => {
     showErrors(data.errors || [{ code: "server", message: "求解失败", items: [] }]);
   }
 });
+
+/* ------------------------------ 单参数扫描 ------------------------------ */
+function showSweepError(message) {
+  const fb = $("#sweep-feedback");
+  fb.innerHTML = "";
+  fb.appendChild(el("div", { class: "err-title", text: `● ${message}` }));
+  fb.classList.remove("hidden");
+}
+
+function clearSweepFeedback() {
+  const fb = $("#sweep-feedback");
+  fb.classList.add("hidden");
+  fb.innerHTML = "";
+}
+
+function buildPayload() {
+  return {
+    ground: state.ground,
+    nodes: state.nodes.map((n) => n.id),
+    elements: state.elements.map((e) => ({
+      id: e.id,
+      type: e.type,
+      node_p: e.node_p,
+      node_n: e.node_n,
+      value: Number(e.value),
+    })),
+  };
+}
+
+// 把后端错误分组拍平成一行行文本，用于扫描反馈与采样点明细
+function flattenErrors(errors) {
+  const lines = [];
+  (errors || []).forEach((g) => {
+    if (g.items && g.items.length) {
+      g.items.forEach((item) => lines.push(errorItemText(g, item)));
+    } else {
+      lines.push(g.message);
+    }
+  });
+  return lines;
+}
+
+function errorItemText(group, item) {
+  if (item.ref) return `${item.ref}：${item.detail}`;
+  if (item.nodes) return `${group.message}：子网节点 ${item.nodes.join("、")}`;
+  return item.detail || group.message;
+}
+
+function validateSweepForm() {
+  const items = [];
+  const elementId = $("#sweep-element").value;
+  const elem = state.elements.find((e) => e.id === elementId);
+  if (!elementId || !elem) items.push("请先在元件表中选择一个扫描元件");
+
+  const startRaw = $("#sweep-start").value;
+  const endRaw = $("#sweep-end").value;
+  const pointsRaw = $("#sweep-points").value;
+  const start = Number(startRaw);
+  const end = Number(endRaw);
+  const points = Number(pointsRaw);
+
+  if (startRaw === "" || !Number.isFinite(start)) items.push(`起值“${startRaw}”不是有限数字`);
+  if (endRaw === "" || !Number.isFinite(end)) items.push(`止值“${endRaw}”不是有限数字`);
+  if (Number.isFinite(start) && Number.isFinite(end) && start === end)
+    items.push("起值与止值不能相同，扫描区间至少包含两个不同的采样值");
+  if (
+    elem && elem.type === "R" && Number.isFinite(start) && Number.isFinite(end)
+    && (start <= 0 || end <= 0)
+  ) {
+    items.push(`电阻扫描范围包含非正阻值：起值（${startRaw}）与止值（${endRaw}）都必须大于 0`);
+  }
+  if (pointsRaw === "" || !Number.isInteger(points))
+    items.push(`采样点数“${pointsRaw}”必须是整数`);
+  else if (points < SWEEP_MIN_POINTS || points > SWEEP_MAX_POINTS)
+    items.push(`采样点数必须在 ${SWEEP_MIN_POINTS}～${SWEEP_MAX_POINTS} 之间（当前：${points}）`);
+
+  if (items.length) {
+    showSweepError("扫描参数未通过校验：" + items.join("；"));
+    return null;
+  }
+  return { element_id: elementId, start, end, points };
+}
+
+$("#btn-sweep").addEventListener("click", async () => {
+  clearSweepFeedback();
+  const spec = validateSweepForm();
+  if (!spec) return;
+
+  const btn = $("#btn-sweep");
+  btn.disabled = true;
+  btn.textContent = "扫描中…";
+  try {
+    const payload = buildPayload();
+    payload.sweep = spec;
+
+    let resp;
+    try {
+      resp = await fetch("/api/sweep", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      showSweepError(`网络请求失败：${err}`);
+      return;
+    }
+
+    let data;
+    try {
+      data = await resp.json();
+    } catch (err) {
+      showSweepError("服务端返回了无法解析的内容");
+      return;
+    }
+
+    if (resp.ok && data.ok) {
+      sweepResult = data;
+      // 沿用上一次的观测量类型；目标若已不在清单中则重选
+      sweepView = { quantity: sweepView.quantity, target: null };
+      $("#sweep-quantity").value = sweepView.quantity;
+      renderSweepResult();
+    } else {
+      const lines = flattenErrors(data.errors);
+      showSweepError(lines.length ? lines.join("；") : "扫描请求被拒绝");
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📈 开始参数扫描";
+  }
+});
+
+/* ------------------------------ 扫描结果渲染 ------------------------------ */
+$("#sweep-quantity").addEventListener("change", (ev) => {
+  if (!sweepResult) return;
+  sweepView.quantity = ev.target.value;
+  sweepView.target = null;
+  // 只重渲染，不重新请求
+  renderSweepResult();
+});
+
+$("#sweep-target").addEventListener("change", (ev) => {
+  if (!sweepResult) return;
+  sweepView.target = Number(ev.target.value);
+  drawSweepChart();
+  renderSweepTable();
+});
+
+function targetList() {
+  return sweepView.quantity === "voltage" ? sweepResult.nodes : sweepResult.branches;
+}
+
+function targetLabel(index) {
+  const list = targetList();
+  if (sweepView.quantity === "voltage") {
+    return `节点 ${list[index]} 电压`;
+  }
+  const b = list[index];
+  return `支路 ${b.id} 电流（${b.node_p}→${b.node_n}）`;
+}
+
+function targetUnit() {
+  return sweepView.quantity === "voltage" ? "V" : "A";
+}
+
+function pointValue(rec, index) {
+  const arr = sweepView.quantity === "voltage" ? rec.voltages : rec.currents;
+  return arr ? arr[index] : null;
+}
+
+function renderSweepResult() {
+  const meta = sweepResult.sweep;
+  $("#sweep-param-head").textContent = `${meta.element_id} 参数值 (${meta.unit || "—"})`;
+  $("#sweep-value-head").textContent =
+    sweepView.quantity === "voltage" ? "节点电压 (V)" : "支路电流 (A)";
+  $("#sweep-target-label").textContent = sweepView.quantity === "voltage" ? "节点" : "支路";
+
+  // 重建目标下拉
+  const sel = $("#sweep-target");
+  sel.innerHTML = "";
+  const list = targetList();
+  list.forEach((item, i) => {
+    const text = sweepView.quantity === "voltage"
+      ? item
+      : `${item.id}（${item.type} ${item.node_p}→${item.node_n}）`;
+    sel.appendChild(el("option", { value: String(i), text }));
+  });
+  if (sweepView.target === null || sweepView.target >= list.length) {
+    sweepView.target = 0;
+  }
+  sel.value = String(sweepView.target);
+
+  const okCount = sweepResult.points.filter((p) => p.status === "ok").length;
+  const failCount = sweepResult.points.length - okCount;
+  $("#sweep-meta").textContent =
+    `${meta.element_id}：${fmt(meta.start)} → ${fmt(meta.end)} ${meta.unit || ""}，` +
+    `${meta.points} 点（成功 ${okCount}${failCount ? `，失败 ${failCount}` : ""}）`;
+
+  drawSweepChart();
+  renderSweepTable();
+  $("#sweep-result").classList.remove("hidden");
+}
+
+function tickFmt(x) {
+  if (!Number.isFinite(x)) return String(x);
+  if (Math.abs(x) < 1e-13) return "0";
+  const ax = Math.abs(x);
+  if (ax >= 1e5 || ax < 1e-3) return x.toExponential(2);
+  return String(parseFloat(x.toPrecision(4)));
+}
+
+// 生成约 5 个覆盖 lo..hi 的“好看”刻度
+function niceTicks(lo, hi) {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo === hi) return [lo];
+  const span = hi - lo;
+  const step0 = span / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const norm = step0 / mag;
+  const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+  const ticks = [];
+  for (let t = Math.ceil(lo / step - 1e-9); t * step <= hi + 1e-9 * span; t += 1) {
+    ticks.push(t * step);
+  }
+  return ticks;
+}
+
+function padDomain(lo, hi) {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [0, 1];
+  if (lo === hi) {
+    const d = Math.abs(lo) || 1;
+    return [lo - d * 0.1, hi + d * 0.1];
+  }
+  const pad = (hi - lo) * 0.05;
+  return [lo - pad, hi + pad];
+}
+
+function svgEl(tag, attrs = {}) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+  return node;
+}
+
+function drawSweepChart() {
+  const box = $("#sweep-chart");
+  box.innerHTML = "";
+  const W = 680;
+  const H = 360;
+  const M = { top: 34, right: 24, bottom: 52, left: 72 };
+  const pw = W - M.left - M.right;
+  const ph = H - M.top - M.bottom;
+
+  const records = sweepResult.points;
+  const xs = records.map((r) => r.value);
+  const ys = records.map((r) => pointValue(r, sweepView.target));
+  const okYs = ys.filter((y) => y !== null && Number.isFinite(y));
+
+  if (okYs.length === 0) {
+    box.appendChild(el("div", {
+      class: "chart-empty",
+      text: "所有采样点均求解失败，无可绘制曲线；失败原因见下方采样点明细。",
+    }));
+    return;
+  }
+
+  const [xLo0, xHi0] = [Math.min(...xs), Math.max(...xs)];
+  const [yLo0, yHi0] = [Math.min(...okYs), Math.max(...okYs)];
+  const [xLo, xHi] = padDomain(xLo0, xHi0);
+  const [yLo, yHi] = padDomain(yLo0, yHi0);
+  const sx = (x) => M.left + ((x - xLo) / (xHi - xLo)) * pw;
+  const sy = (y) => M.top + ph - ((y - yLo) / (yHi - yLo)) * ph;
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "sweep-chart", role: "img" });
+
+  // y 向网格线 + 刻度
+  niceTicks(yLo, yHi).forEach((t) => {
+    const y = sy(t);
+    svg.appendChild(svgEl("line", {
+      x1: M.left, y1: y, x2: W - M.right, y2: y,
+      class: t === 0 && yLo < 0 && yHi > 0 ? "zero" : "gridline",
+    }));
+    const txt = svgEl("text", { x: M.left - 7, y: y + 3.5, "text-anchor": "end" });
+    txt.textContent = tickFmt(t);
+    svg.appendChild(txt);
+  });
+
+  // x 轴刻度
+  niceTicks(xLo, xHi).forEach((t) => {
+    const x = sx(t);
+    svg.appendChild(svgEl("line", { x1: x, y1: M.top, x2: x, y2: M.top + ph, class: "gridline" }));
+    const txt = svgEl("text", { x, y: M.top + ph + 15, "text-anchor": "middle" });
+    txt.textContent = tickFmt(t);
+    svg.appendChild(txt);
+  });
+
+  // 坐标轴
+  svg.appendChild(svgEl("line", {
+    x1: M.left, y1: M.top + ph, x2: W - M.right, y2: M.top + ph, class: "axis",
+  }));
+  svg.appendChild(svgEl("line", {
+    x1: M.left, y1: M.top, x2: M.left, y2: M.top + ph, class: "axis",
+  }));
+
+  // 标题
+  const meta = sweepResult.sweep;
+  const title = svgEl("text", { x: M.left, y: 17, class: "title" });
+  title.textContent = `${targetLabel(sweepView.target)} 随 ${meta.element_id} 参数变化`;
+  svg.appendChild(title);
+
+  // x 轴标题
+  const xTitle = svgEl("text", { x: M.left + pw / 2, y: H - 10, "text-anchor": "middle" });
+  xTitle.textContent = `${meta.element_id} 参数值${meta.unit ? ` (${meta.unit})` : ""}`;
+  svg.appendChild(xTitle);
+
+  // y 轴标题（竖排）
+  const yTitle = svgEl("text", {
+    x: 17, y: M.top + ph / 2, "text-anchor": "middle",
+    transform: `rotate(-90 17 ${M.top + ph / 2})`,
+  });
+  yTitle.textContent = sweepView.quantity === "voltage" ? "节点电压 (V)" : "支路电流 (A)";
+  svg.appendChild(yTitle);
+
+  // 折线（仅成功点参与，失败处自然断开）
+  let d = "";
+  let pen = false;
+  records.forEach((r) => {
+    const y = pointValue(r, sweepView.target);
+    if (y === null || !Number.isFinite(y)) {
+      pen = false;
+      return;
+    }
+    d += `${pen ? "L" : "M"}${sx(r.value).toFixed(2)},${sy(y).toFixed(2)} `;
+    pen = true;
+  });
+  svg.appendChild(svgEl("path", { d: d.trim(), class: "curve" }));
+
+  // 数据点
+  records.forEach((r) => {
+    const y = pointValue(r, sweepView.target);
+    const cx = sx(r.value);
+    if (y === null || !Number.isFinite(y)) {
+      // 失败点画在图底部，用 ✕ 标记
+      const cy = M.top + ph - 4;
+      svg.appendChild(svgEl("line", {
+        x1: cx - 4, y1: cy - 4, x2: cx + 4, y2: cy + 4,
+        stroke: "var(--err)", "stroke-width": 1.8,
+      }));
+      svg.appendChild(svgEl("line", {
+        x1: cx - 4, y1: cy + 4, x2: cx + 4, y2: cy - 4,
+        stroke: "var(--err)", "stroke-width": 1.8,
+      }));
+      return;
+    }
+    const cy = sy(y);
+    const tip = svgEl("title");
+    tip.textContent =
+      `${meta.element_id}=${fmt(r.value)}${meta.unit ? ` ${meta.unit}` : ""}\n` +
+      `${targetLabel(sweepView.target)} = ${fmt(y)} ${targetUnit()}`;
+    const dot = svgEl("circle", { cx, cy, r: 3.4, class: "pt-ok" });
+    dot.appendChild(tip);
+    svg.appendChild(dot);
+  });
+
+  box.appendChild(svg);
+}
+
+function renderSweepTable() {
+  const tbody = $("#sweep-table tbody");
+  tbody.innerHTML = "";
+  const meta = sweepResult.sweep;
+  sweepResult.points.forEach((r) => {
+    const y = pointValue(r, sweepView.target);
+    const ok = r.status === "ok";
+    const tr = el("tr", { class: ok ? "" : "row-fail" });
+    tr.appendChild(el("td", { text: String(r.index + 1) }));
+    tr.appendChild(el("td", { text: `${fmt(r.value)} ${meta.unit || ""}`.trim() }));
+
+    const valTd = el("td");
+    if (ok && y !== null && Number.isFinite(y)) {
+      valTd.appendChild(
+        el("span", { class: y < 0 ? "num-neg" : "", text: `${fmt(y)} ${targetUnit()}` })
+      );
+    } else {
+      valTd.appendChild(el("span", { class: "num-neg", text: "—" }));
+      const ul = el("ul", { class: "point-errors" });
+      flattenErrors(r.errors).forEach((line) => ul.appendChild(el("li", { text: line })));
+      valTd.appendChild(ul);
+    }
+    tr.appendChild(valTd);
+
+    const stTd = el("td");
+    stTd.appendChild(
+      el("span", {
+        class: `status-tag ${ok ? "status-ok" : "status-err"}`,
+        text: ok ? "成功" : "失败",
+      })
+    );
+    tr.appendChild(stTd);
+    tbody.appendChild(tr);
+  });
+}
 
 renderAll();
