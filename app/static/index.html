@@ -80,12 +80,70 @@
       </div>
 
       <button class="btn btn-primary btn-block" id="btn-solve">▶ 校核求解</button>
+
+      <!-- ===================== 单参数扫描 ===================== -->
+      <div class="card sweep-card">
+        <div class="card-head">
+          <h2>单参数扫描</h2>
+        </div>
+        <div class="sweep-form">
+          <label class="sweep-field sweep-field-full">
+            <span>扫描元件</span>
+            <select id="sweep-element"></select>
+          </label>
+          <label class="sweep-field">
+            <span>起始值</span>
+            <input id="sweep-start" type="text" inputmode="decimal" placeholder="如 1" />
+          </label>
+          <label class="sweep-field">
+            <span>终止值</span>
+            <input id="sweep-stop" type="text" inputmode="decimal" placeholder="如 100" />
+          </label>
+          <label class="sweep-field">
+            <span>采样点数</span>
+            <input id="sweep-points" type="text" inputmode="numeric" value="11" />
+          </label>
+          <div class="sweep-hint" id="sweep-hint">从元件表选择一个元件并设置扫描范围（2～101 点）。</div>
+          <button class="btn btn-primary btn-block" id="btn-sweep">⇄ 开始扫描</button>
+          <div class="sweep-error hidden" id="sweep-error"></div>
+        </div>
+        <p class="hint">扫描仅在服务端临时替换该元件参数，不会改写当前电路表；起值可大于止值（反向扫描）。</p>
+      </div>
     </section>
 
     <!-- ===================== 右侧：结果区 ===================== -->
     <section class="panel panel-result">
       <div id="error-panel" class="error-panel hidden"></div>
       <div id="warning-panel" class="warning-panel hidden"></div>
+
+      <div id="sweep-area" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>单参数扫描结果</h2>
+            <div class="head-right">
+              <label class="observable-label">观测量
+                <select id="sweep-observable"></select>
+              </label>
+            </div>
+          </div>
+          <div id="sweep-summary" class="sweep-summary"></div>
+          <div id="sweep-chart" class="sweep-chart"></div>
+          <div class="table-wrap">
+            <table class="grid result-grid" id="sweep-table">
+              <thead>
+                <tr>
+                  <th style="width:56px">序号</th>
+                  <th id="sweep-th-param">参数值</th>
+                  <th style="width:80px">状态</th>
+                  <th id="sweep-th-value">观测值</th>
+                  <th>失败原因</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
       <div id="result-area" class="hidden">
         <div class="card">

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from typing import Any
 
@@ -18,6 +19,9 @@ import numpy as np
 
 MAX_NODES = 30
 MAX_ELEMENTS = 90
+# 单参数扫描采样点数允许范围
+SWEEP_POINTS_MIN = 2
+SWEEP_POINTS_MAX = 101
 _ID_MAX = 24
 
 # 电压源约束一致性判据（绝对 + 相对）
@@ -392,4 +396,134 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
             "error_rel": error_rel,
         },
         "warnings": warnings,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 单参数扫描
+# ---------------------------------------------------------------------------
+def _sweep_problem(detail: str, ref: str = "-") -> CircuitError:
+    return CircuitError(
+        [{"code": "sweep_validation", "message": "扫描参数未通过校验",
+          "items": [{"ref": ref, "detail": detail}]}]
+    )
+
+
+def sweep(payload: dict[str, Any]) -> dict[str, Any]:
+    """对单个元件参数做等间距扫描，逐点复用 :func:`solve`。
+
+    扫描配置本身非法（元件不存在、范围非法、电阻范围非正、点数超出
+    2～101）时抛出 :class:`CircuitError`；某个采样点求解失败不影响
+    其它点，其结构化错误原样记录在该点的 ``errors`` 中。
+
+    扫描在网络数据的深拷贝上进行，不修改调用方传入的电路表。
+    """
+    sweep_cfg = payload.get("sweep")
+    if not isinstance(sweep_cfg, dict):
+        raise _sweep_problem("缺少 sweep 扫描配置对象")
+
+    # ---------------------------------------------------------- 目标元件 -----
+    target_id = str(sweep_cfg.get("element_id") or "").strip()
+    if not target_id:
+        raise _sweep_problem("未选择扫描元件（element_id 为空）")
+
+    raw_elements = payload.get("elements")
+    if not isinstance(raw_elements, list):
+        raw_elements = []
+    target_index: int | None = None
+    target_type = ""
+    for i, raw in enumerate(raw_elements):
+        if isinstance(raw, dict) and str(raw.get("id") or "").strip() == target_id:
+            target_index = i
+            target_type = str(raw.get("type") or "").strip().upper()
+            break
+    if target_index is None:
+        raise _sweep_problem(f"扫描元件“{target_id}”不在元件表中", ref=target_id)
+
+    # ------------------------------------------------------------ 扫描范围 ---
+    start = sweep_cfg.get("start")
+    stop = sweep_cfg.get("stop")
+    points = sweep_cfg.get("points")
+
+    if isinstance(start, bool) or not isinstance(start, (int, float)):
+        raise _sweep_problem("扫描起始值缺失或不是数字", ref=target_id)
+    if isinstance(stop, bool) or not isinstance(stop, (int, float)):
+        raise _sweep_problem("扫描终止值缺失或不是数字", ref=target_id)
+    start_f, stop_f = float(start), float(stop)
+    if not math.isfinite(start_f) or not math.isfinite(stop_f):
+        raise _sweep_problem("扫描起始值与终止值必须为有限实数（不能为无穷大或 NaN）",
+                             ref=target_id)
+    if start_f == stop_f:
+        raise _sweep_problem("扫描起始值与终止值相同，扫描范围为空（两者必须不同）",
+                             ref=target_id)
+    if isinstance(points, bool) or not isinstance(points, (int, float)):
+        # 拒绝 "11" 等字符串及布尔值，避免隐式类型转换掩盖前端问题
+        raise _sweep_problem(
+            f"采样点数必须为 {SWEEP_POINTS_MIN}～{SWEEP_POINTS_MAX} 之间的整数")
+    if isinstance(points, float):
+        if not math.isfinite(points) or not points.is_integer():
+            raise _sweep_problem(
+                f"采样点数“{points}”不是整数，必须为 {SWEEP_POINTS_MIN}～{SWEEP_POINTS_MAX} "
+                "之间的整数")
+        points = int(points)
+    if points < SWEEP_POINTS_MIN or points > SWEEP_POINTS_MAX:
+        raise _sweep_problem(
+            f"采样点数为 {points}，超出允许范围 {SWEEP_POINTS_MIN}～{SWEEP_POINTS_MAX}")
+
+    # 线性等间距：电阻任一点 <= 0 都无法求解，直接拒绝整个扫描
+    if target_type == "R" and min(start_f, stop_f) <= 0.0:
+        raise _sweep_problem(
+            f"电阻“{target_id}”扫描范围 [{start_f:g}, {stop_f:g}] Ω 含非正值；"
+            "电阻值必须全程大于 0",
+            ref=target_id,
+        )
+
+    step = (stop_f - start_f) / (points - 1)
+    values = [start_f + step * i for i in range(points)]
+
+    # ---------------------------------------------------------- 逐点求解 -----
+    base: dict[str, Any] = {
+        "ground": payload.get("ground"),
+        "nodes": copy.deepcopy(payload.get("nodes")),
+        "elements": copy.deepcopy(raw_elements),
+    }
+    samples: list[dict[str, Any]] = []
+    n_ok = 0
+    n_fail = 0
+    for i, val in enumerate(values):
+        point_payload = copy.deepcopy(base)
+        point_payload["elements"][target_index]["value"] = val
+        entry: dict[str, Any] = {"index": i, "param": val}
+        try:
+            r = solve(point_payload)
+        except CircuitError as exc:
+            # 保留该点的完整结构化错误，但不中断整次扫描
+            entry["ok"] = False
+            entry["errors"] = exc.errors
+            n_fail += 1
+        except Exception as exc:  # noqa: BLE001 - 扫描须容忍单点数值意外
+            entry["ok"] = False
+            entry["errors"] = [
+                {"code": "solver_exception", "message": f"求解器异常：{exc}", "items": []}
+            ]
+            n_fail += 1
+        else:
+            entry["ok"] = True
+            # 扫描只需观测量：节点电压与支路方向电流
+            entry["node_voltages"] = r["node_voltages"]
+            entry["branches"] = [
+                {"id": b["id"], "current": b["current"]} for b in r["branches"]
+            ]
+            n_ok += 1
+        samples.append(entry)
+
+    return {
+        "ok": True,
+        "element_id": target_id,
+        "element_type": target_type,
+        "start": start_f,
+        "stop": stop_f,
+        "points": points,
+        "samples": samples,
+        "summary": {"total": points, "succeeded": n_ok, "failed": n_fail},
     }

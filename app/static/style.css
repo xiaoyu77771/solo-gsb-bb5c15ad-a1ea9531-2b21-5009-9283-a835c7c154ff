@@ -197,4 +197,83 @@ body {
 }
 .placeholder-mark { font-size: 40px; margin-bottom: 8px; }
 
+/* ---------------- 单参数扫描 ---------------- */
+.sweep-card { border-top: 3px solid var(--brand); }
+.sweep-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px 12px;
+  align-items: end;
+}
+.sweep-field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-soft); }
+.sweep-field-full { grid-column: 1 / -1; }
+.sweep-field input, .sweep-field select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 9px;
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+}
+.sweep-field input:focus, .sweep-field select:focus { outline: none; border-color: var(--brand); }
+.sweep-hint {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+#btn-sweep { grid-column: 1 / -1; }
+.sweep-error {
+  grid-column: 1 / -1;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: var(--err-bg);
+  border: 1px solid #efc2c5;
+  color: var(--err);
+  font-size: 13px;
+}
+.sweep-error ul { margin: 4px 0 0; padding-left: 20px; }
+
+.observable-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.observable-label select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font: inherit;
+  background: #fff;
+  min-width: 170px;
+}
+.sweep-summary { font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+.sweep-summary b.ok { color: var(--ok); }
+.sweep-summary b.bad { color: var(--err); }
+
+.sweep-chart { width: 100%; overflow-x: auto; margin-bottom: 12px; }
+.sweep-chart svg { display: block; width: 100%; height: auto; min-width: 480px; }
+.sweep-chart .axis { stroke: #8a94a6; stroke-width: 1; }
+.sweep-chart .grid-line { stroke: #e8ecf2; stroke-width: 1; }
+.sweep-chart .zero-line { stroke: #c2cad6; stroke-width: 1.2; stroke-dasharray: 5 4; }
+.sweep-chart .curve { fill: none; stroke: var(--brand); stroke-width: 2; }
+.sweep-chart .pt { fill: #fff; stroke: var(--brand); stroke-width: 1.6; }
+.sweep-chart .pt-fail { fill: none; stroke: var(--err); stroke-width: 2; }
+.sweep-chart text { fill: var(--ink-soft); font-size: 11px; }
+.sweep-chart .axis-title { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.sweep-chart .empty-note { fill: var(--err); font-size: 13px; }
+
+#sweep-table tr.row-fail td { background: var(--bad-row); }
+.sweep-badge {
+  display: inline-block;
+  border-radius: 5px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sweep-badge-ok { background: var(--ok-bg); color: var(--ok); }
+.sweep-badge-fail { background: var(--err-bg); color: var(--err); }
+.fail-detail { color: var(--err); font-size: 12.5px; }
+
 .hidden { display: none; }
